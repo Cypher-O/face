@@ -1,125 +1,197 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-void main() {
-  runApp(const MyApp());
+void main() => runApp(MyApp());
+
+class MyApp extends StatefulWidget {
+  @override
+  _MyAppState createState() => _MyAppState();
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class _MyAppState extends State<MyApp> {
+  CameraController? controller;
+  late List<CameraDescription> cameras;
+  int step = 0;
+  final steps = ['Turn Left', 'Turn Right', 'Show Chin', 'Look Straight'];
+  String guidance = '';
 
-  // This widget is the root of your application.
+  @override
+  void initState() {
+    super.initState();
+    initCamera();
+  }
+
+  Future<void> initCamera() async {
+    cameras = await availableCameras();
+    controller = CameraController(cameras[1], ResolutionPreset.high);
+    await controller?.initialize();
+    setState(() {});
+  }
+
+  Future<void> captureAndSendFrame() async {
+    if (controller != null && controller!.value.isInitialized) {
+      final XFile file = await controller!.takePicture();
+      final bytes = await file.readAsBytes();
+
+      final response = await http.post(
+        Uri.parse('http://localhost:3000/api/auth/real-time-recognition'),
+        headers: {
+          'X-API-Key': 'your-api-key',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'imageBytes': base64Encode(bytes),
+          'step': step,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        setState(() {
+          guidance = responseData['data']['guidance'];
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
+      home: Scaffold(
+        appBar: AppBar(title: Text('Face Recognition')),
+        body: Column(
           children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            if (controller != null && controller!.value.isInitialized)
+              Container(
+                height: 400,
+                child: CameraPreview(controller!),
+              ),
+            SizedBox(height: 20),
+            Text('Guidance: $guidance', style: TextStyle(fontSize: 18)),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                captureAndSendFrame();
+              },
+              child: Text('Capture Frame'),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
+
+  @override
+  void dispose() {
+    controller?.dispose();
+    super.dispose();
+  }
 }
+
+
+// import 'package:camera/camera.dart';
+// import 'package:flutter/material.dart';
+// import 'package:http/http.dart' as http;
+// import 'dart:convert';
+
+// void main() => runApp(MyApp());
+
+// class MyApp extends StatefulWidget {
+//   const MyApp({super.key});
+
+//   @override
+//   _MyAppState createState() => _MyAppState();
+// }
+
+// class _MyAppState extends State<MyApp> {
+//   CameraController? controller;
+//   late List<CameraDescription> cameras;
+//   int step = 0;
+//   final steps = ['Turn Left', 'Turn Right', 'Show Chin', 'Look Straight'];
+ 
+//   @override
+//   void initState() {
+//     super.initState();
+//     initCamera();
+//   }
+
+//   Future<void> initCamera() async {
+//     cameras = await availableCameras();
+//     controller = CameraController(cameras[1], ResolutionPreset.high);
+//     await controller?.initialize();
+//     setState(() {});
+//   }
+
+//   Future<void> captureAndSendFrame() async {
+//     if (controller != null && controller!.value.isInitialized) {
+//       final XFile file = await controller!.takePicture();
+//       final bytes = await file.readAsBytes();
+
+//       final response = await http.post(
+//         Uri.parse('http://localhost:3000/api/auth/real-time-recognition'),
+//         headers: {'Content-Type': 'application/json'},
+//         body: jsonEncode({
+//           'imageBytes': base64Encode(bytes),
+//           'step': step
+//         }),
+//       );
+
+//       final responseData = jsonDecode(response.body);
+//       if (responseData['status'] == 'success') {
+//         setState(() {
+//           step++;
+//         });
+//       } else {
+//         // Handle error
+//         showDialog(
+//           context: context,
+//           builder: (context) => AlertDialog(
+//             title: const Text('Error'),
+//             content: Text(responseData['message']),
+//             actions: [
+//               TextButton(
+//                 onPressed: () => Navigator.of(context).pop(),
+//                 child: const Text('OK'),
+//               ),
+//             ],
+//           ),
+//         );
+//       }
+//     }
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return MaterialApp(
+//       home: Scaffold(
+//         appBar: AppBar(title: const Text('Face Verification')),
+//         body: controller == null || !controller!.value.isInitialized
+//             ? const Center(child: CircularProgressIndicator())
+//             : Column(
+//                 mainAxisAlignment: MainAxisAlignment.center,
+//                 children: [
+//                   Text(steps[step]),
+//                   const SizedBox(height: 20),
+//                   AspectRatio(
+//                     aspectRatio: controller!.value.aspectRatio,
+//                     child: CameraPreview(controller!),
+//                   ),
+//                   const SizedBox(height: 20),
+//                   ElevatedButton(
+//                     onPressed: step < steps.length ? captureAndSendFrame : null,
+//                     child: const Text('Capture'),
+//                   ),
+//                 ],
+//               ),
+//       ),
+//     );
+//   }
+
+//   @override
+//   void dispose() {
+//     controller?.dispose();
+//     super.dispose();
+//   }
+// }
